@@ -27,9 +27,9 @@ import os
 import re
 import shutil
 import struct
-from typing import Any, SupportsIndex
 
-from etils import epath
+from searchless_chess.src import constants
+from typing import Any, SupportsIndex
 from typing_extensions import Self
 import zstandard as zstd
 
@@ -263,7 +263,7 @@ class BagWriter:
 class BagDataSource:
   """PyGrain-compatible data source for bagz files."""
 
-  def __init__(self, path: epath.PathLike) -> None:
+  def __init__(self, path: str) -> None:
     """Creates a new BagDataSource object.
 
     Args:
@@ -290,3 +290,14 @@ class BagDataSource:
 
   def __repr__(self) -> str:
     return f'BagDataSource(path={self._path!r}'
+
+
+if __name__ == '__main__':
+  r = BagReader('../data/behavioral_cloning_data.bag')
+  print("Number of positions", len(r))
+  element = r[0]
+  print("First element", element)
+  fen, move = constants.CODERS['behavioral_cloning'].decode(r[0])
+  print("FEN", fen)
+  print("Move", move)
+  
