@@ -21,7 +21,6 @@ import dataclasses
 from typing import Any, NamedTuple, Protocol
 
 from apache_beam import coders
-from grain import python as pygrain
 import haiku as hk
 import jaxtyping as jtp
 
@@ -53,7 +52,7 @@ class Predictor:
 
 class DataLoaderBuilder(Protocol):
 
-  def __call__(self, config: config_lib.DataConfig) -> pygrain.DataLoader:
+  def __call__(self, config: config_lib.DataConfig) -> Any:
     """Returns a PyGrain data loader from the `config`."""
 
 
