@@ -12,7 +12,7 @@ import os
 import re
 import shutil
 import struct
-import json
+import tqdm
 
 from searchless_chess.src import constants
 from datasets import Dataset
@@ -306,26 +306,37 @@ if __name__ == '__main__':
     'all': -1,  # 500_000_000
   }
 
-  val_messages = []
+  val_prompts = []
+  val_responses = []
   for i in range(len(val_r)):
-    conversation = encode_message(val_r[i])
-    val_messages.append(conversation)
-  val_dataset = Dataset.from_list(val_messages)
+    fen, move = constants.CODERS['behavioral_cloning'].decode(val_r[i])
+    val_prompts.append(f"You are an expert chess player. Find the best UCI chess move for the following FEN position: {fen}")
+    val_responses.append(f"{move}")
+  val_dataset = Dataset.from_dict({
+    'prompt': val_prompts,
+    'response': val_responses,
+  })
 
   for dataset_name, dataset_size in dataset_sizes.items():
     print(f"Processing {dataset_name} dataset")
     train_messages = []
-    for i in range(0, dataset_size):
-      conversation = encode_message(train_r[i])
-      train_messages.append(conversation)
-    # Create a huggingface dataset from the messages and upload to a private github bucket
-    train_dataset = Dataset.from_list(train_messages)
-    train_dataset.push_to_hub(repo_id='j316chuck/chess_rl',
+    train_prompts = []
+    train_responses = []
+    for i in tqdm.tqdm(range(dataset_size)):
+      fen, move = constants.CODERS['behavioral_cloning'].decode(train_r[i])
+      train_prompts.append(f"You are an expert chess player. Find the best UCI chess move for the following FEN position: {fen}")
+      train_responses.append(f"{move}")
+    train_dataset = Dataset.from_dict({
+      'prompt': train_prompts,
+      'response': train_responses,
+    })
+    repo_id = 'j316chuck/chess_rl'
+    train_dataset.push_to_hub(repo_id=repo_id,
                         config_name=dataset_name,
                         split='train',
-                        private=True)
-    val_dataset.push_to_hub(repo_id='j316chuck/chess_rl',
+                        private=True,
+                        )
+    val_dataset.push_to_hub(repo_id=repo_id,
                         config_name=dataset_name,
                         split='validation',
                         private=True)
-  
