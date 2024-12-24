@@ -15,7 +15,7 @@ import struct
 import tqdm
 
 from searchless_chess.src import constants
-from datasets import Dataset
+from datasets import Dataset, concatenate_datasets
 from typing import Any, SupportsIndex
 from typing_extensions import Self
 import zstandard as zstd
@@ -295,6 +295,23 @@ def encode_message(element: str):
   }
   return message
 
+def generate_chunk(reader, start_idx, chunk_size):
+    """
+    Return a Dataset of (prompt, response) pairs from `reader` [start_idx : start_idx + chunk_size].
+    """
+    end_idx = min(start_idx + chunk_size, len(reader))
+    prompts = []
+    responses = []
+    for i in range(start_idx, end_idx):
+        fen, move = constants.CODERS['behavioral_cloning'].decode(reader[i])
+        prompts.append(f"You are an expert chess player. Find the best UCI chess move for the following FEN position: {fen}")
+        responses.append(move)
+
+    return Dataset.from_dict({
+        'prompt': prompts,
+        'response': responses,
+    })
+
 if __name__ == '__main__':
   train_r = BagReader('../data/behavioral_cloning_data_train.bag')
   val_r = BagReader('../data/test/behavioral_cloning_data_test.bag')
@@ -305,6 +322,8 @@ if __name__ == '__main__':
     'large': 50_000_000,
     'all': -1,  # 500_000_000
   }
+  chunk_size = 50_000
+  repo_id = 'j316chuck/chess_rl'
 
   val_prompts = []
   val_responses = []
@@ -317,26 +336,37 @@ if __name__ == '__main__':
     'response': val_responses,
   })
 
-  for dataset_name, dataset_size in dataset_sizes.items():
-    print(f"Processing {dataset_name} dataset")
-    train_messages = []
-    train_prompts = []
-    train_responses = []
-    for i in tqdm.tqdm(range(dataset_size)):
-      fen, move = constants.CODERS['behavioral_cloning'].decode(train_r[i])
-      train_prompts.append(f"You are an expert chess player. Find the best UCI chess move for the following FEN position: {fen}")
-      train_responses.append(f"{move}")
-    train_dataset = Dataset.from_dict({
-      'prompt': train_prompts,
-      'response': train_responses,
-    })
-    repo_id = 'j316chuck/chess_rl'
-    train_dataset.push_to_hub(repo_id=repo_id,
-                        config_name=dataset_name,
-                        split='train',
-                        private=True,
-                        )
-    val_dataset.push_to_hub(repo_id=repo_id,
-                        config_name=dataset_name,
-                        split='validation',
-                        private=True)
+  for dataset_name, max_records in dataset_sizes.items():
+    print(f"Processing {dataset_name} dataset...")
+
+    # If max_records == -1, that means "all" (the entire train).
+    if max_records < 0:
+      max_records = len(train_r)
+    num_records = min(max_records, len(train_r))
+    num_chunks = (num_records + chunk_size - 1) // chunk_size
+
+    # We can push the validation dataset now if desired:
+    val_dataset.push_to_hub(
+        repo_id=repo_id,
+        config_name=dataset_name,
+        split='validation',
+        private=True
+    )
+
+    cumulative_dataset = None
+    for c in tqdm.trange(num_chunks):
+      start_idx = c * chunk_size
+      chunk_ds = generate_chunk(train_r, start_idx, chunk_size)
+
+      if cumulative_dataset is None:
+        cumulative_dataset = chunk_ds
+      else:
+        # We just append the new chunk to the old dataset
+        cumulative_dataset = concatenate_datasets([cumulative_dataset, chunk_ds])
+    # Now push the updated dataset to the hub
+    cumulative_dataset.push_to_hub(
+        repo_id=repo_id,
+        config_name=dataset_name,
+        split='train',
+        private=True
+    )
