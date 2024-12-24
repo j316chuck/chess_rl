@@ -1,18 +1,3 @@
-# Copyright 2024 DeepMind Technologies Limited
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-
 """Bagz file reader/writer and PyGrain-compatible data source for POSIX systems.
 
 Bagz is a file format for storing a sequence of string records, typically
@@ -27,8 +12,10 @@ import os
 import re
 import shutil
 import struct
+import json
 
 from searchless_chess.src import constants
+from datasets import Dataset
 from typing import Any, SupportsIndex
 from typing_extensions import Self
 import zstandard as zstd
@@ -291,13 +278,54 @@ class BagDataSource:
   def __repr__(self) -> str:
     return f'BagDataSource(path={self._path!r}'
 
+def encode_message(element: str):
+  fen, move = constants.CODERS['behavioral_cloning'].decode(element)
+  conversation = [
+    {
+      "content": f"Find the best UCI chess move for the following FEN position: {fen}",
+      "role": "user"
+    },
+    {
+      "content": f"{move}",
+      "role": "assistant"
+    },
+  ]
+  message = {
+    'messages': conversation
+  }
+  return message
 
 if __name__ == '__main__':
-  r = BagReader('../data/behavioral_cloning_data.bag')
-  print("Number of positions", len(r))
-  element = r[0]
-  print("First element", element)
-  fen, move = constants.CODERS['behavioral_cloning'].decode(r[0])
-  print("FEN", fen)
-  print("Move", move)
+  train_r = BagReader('../data/behavioral_cloning_data_train.bag')
+  val_r = BagReader('../data/test/behavioral_cloning_data_test.bag')
+  print("Number of positions", len(train_r))
+  dataset_sizes = {
+    'small': 500_000,
+    'medium': 5_000_000,
+    'large': 50_000_000,
+    'all': -1,  # 500_000_000
+  }
+
+  val_messages = []
+  for i in range(len(val_r)):
+    conversation = encode_message(val_r[i])
+    val_messages.append(conversation)
+  val_dataset = Dataset.from_list(val_messages)
+
+  for dataset_name, dataset_size in dataset_sizes.items():
+    print(f"Processing {dataset_name} dataset")
+    train_messages = []
+    for i in range(0, dataset_size):
+      conversation = encode_message(train_r[i])
+      train_messages.append(conversation)
+    # Create a huggingface dataset from the messages and upload to a private github bucket
+    train_dataset = Dataset.from_list(train_messages)
+    train_dataset.push_to_hub(repo_id='j316chuck/chess_rl',
+                        config_name=dataset_name,
+                        split='train',
+                        private=True)
+    val_dataset.push_to_hub(repo_id='j316chuck/chess_rl',
+                        config_name=dataset_name,
+                        split='validation',
+                        private=True)
   
