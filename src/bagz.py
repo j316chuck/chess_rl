@@ -304,7 +304,7 @@ def generate_chunk(reader, start_idx, chunk_size):
     responses = []
     for i in range(start_idx, end_idx):
         fen, move = constants.CODERS['behavioral_cloning'].decode(reader[i])
-        prompts.append(f"You are an expert chess player. Find the best UCI chess move for the following FEN position: {fen}")
+        prompts.append(f"Find the best UCI chess move for the following FEN position: {fen}")
         responses.append(move)
 
     return Dataset.from_dict({
