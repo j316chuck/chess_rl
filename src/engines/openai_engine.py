@@ -162,6 +162,7 @@ def evaluate_puzzle_from_pandas_row(puzzle: pd.Series, puzzle_idx: str, engine: 
       1) puzzle['PGN'] is the position's moves from the puzzle start to the end.
       2) puzzle['Moves'] is the solution sequence of moves in UCI format separated by spaces.
     """
+    print(puzzle)
     game = chess.pgn.read_game(io.StringIO(puzzle['PGN']))
     if game is None:
         raise ValueError(f'Failed to read game from PGN {puzzle["PGN"]}.')
