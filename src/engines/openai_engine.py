@@ -209,7 +209,7 @@ def download_s3_path_awscli(
         ],
         check=True,
     )
-    subprocess.run(["aws", "s3", "sync", s3_uri, out_path, *flags], **kwargs, check=True)
+    subprocess.run(["aws", "s3", "cp", s3_uri, out_path, *flags], **kwargs, check=True)
 
 
 if __name__ == '__main__':
