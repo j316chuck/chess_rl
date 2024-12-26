@@ -279,8 +279,10 @@ def download_s3_path_awscli(
         ],
         check=True,
     )
+    print("Downloading s3 path", s3_uri, "to", out_path)
     subprocess.run(["aws", "s3", "cp", s3_uri, out_path, *flags], **kwargs, check=True)
-
+    assert os.path.exists(out_path)
+    
 def upload_s3_path_awscli(
     upload_path: str,
     s3_uri: str,
@@ -339,7 +341,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     # download s3 path to local puzzles.csv if it's not already there
-    if not os.path.exists(PUZZLES_PATH) and re.match("s3:.*", args.puzzles_path):
+    if not os.path.exists(PUZZLES_PATH):
         download_s3_path_awscli(s3_uri=args.puzzles_path, out_path=PUZZLES_PATH)
     
     main(
