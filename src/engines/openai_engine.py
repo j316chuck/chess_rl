@@ -66,7 +66,7 @@ class OpenAIEngine:
         
         # Construct the prompt
         prompt_content = (
-            f"Find the best UCI chess move for the following FEN position: {board_state}"
+            f"You are an expert chess player. Find the best UCI chess move for the following FEN position: {board_state}"
         )
         
         messages = [
@@ -78,11 +78,11 @@ class OpenAIEngine:
         
         # Make the API call using the provided client
         try:
-            print("Modle name", self.model_name)
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 n=1,
                 messages=messages,
+                temperature=self.temperature,
             )
         except Exception as e:
             print(f"Failed to connect to OpenAI API: {e}")
@@ -136,8 +136,6 @@ def main(model_name: str = "gpt-3.5-turbo", api_key: str=BASE_OPENAI_API_KEY, ba
     # Suppose we have a puzzles CSV with columns: 'PGN', 'Moves', 'Rating', ...
     puzzles_path = os.path.join(CURRENT_DIR, "./puzzles.csv")
     puzzles = pd.read_csv(puzzles_path, nrows=n_puzzles)  # e.g., read 10 puzzles
-    print("API KEY: ", api_key)
-    print("BASE URL: ", base_url)
     client = openai.OpenAI(
         api_key=api_key,
         base_url=base_url,
