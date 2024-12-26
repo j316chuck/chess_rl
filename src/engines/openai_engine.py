@@ -4,6 +4,8 @@ import openai
 import pandas as pd
 import chess
 import chess.pgn
+import re 
+import subprocess
 
 import mcli
 import chess
@@ -176,6 +178,40 @@ def main(model_name: str = "gpt-3.5-turbo", api_key: str=BASE_OPENAI_API_KEY, ba
         run_name = os.environ.get("RUN_NAME", "default_run_name")
         mcli.update_run_metadata(run_name, metadata)
 
+def download_s3_path_awscli(
+    s3_uri: str,
+    out_path: str,
+    max_concurrent_requests: int = 200,
+    quiet: bool = False,
+    **kwargs,
+):
+    if not re.match("s3:.*", s3_uri):
+        raise ValueError
+
+    s3_uri = s3_uri.rstrip("/")
+    flags = []
+    if "AWS_PROFILE" in os.environ:
+        flags += ["--profile", os.environ["AWS_PROFILE"]]
+
+    kwargs = {}
+    if quiet:
+        kwargs["stdout"] = subprocess.DEVNULL
+        kwargs["stderr"] = subprocess.DEVNULL
+
+    subprocess.run(
+        [
+            "aws",
+            "configure",
+            "set",
+            "s3.max_concurrent_requests",
+            str(max_concurrent_requests),
+            *flags,
+        ],
+        check=True,
+    )
+    subprocess.run(["aws", "s3", "sync", s3_uri, out_path, *flags], **kwargs, check=True)
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Run chess puzzle evaluation with OpenAI API')
@@ -189,8 +225,15 @@ if __name__ == '__main__':
                         help='Number of puzzles to evaluate')
     parser.add_argument('--update-metadata', action='store_true',
                         help='Whether to update run metadata')
+    parser.add_argument('--puzzles-path', type=str, default=os.path.join(CURRENT_DIR, "./puzzles.csv"),
+                        help='Path to the puzzles CSV file')
 
     args = parser.parse_args()
+    # add s3 download option for puzzles.csv if puzzles_path is not a local path
+    if not os.path.exists(args.puzzles_path) and re.match("s3:.*", args.puzzles_path):
+        download_s3_path_awscli(s3_uri=args.puzzles_path, out_path=os.path.join(CURRENT_DIR, "./puzzles.csv"))
+    print(args.puzzles_path)
+
     main(
         model_name=args.model_name,
         api_key=args.api_key, 
