@@ -12,3 +12,4 @@ orbax-checkpoint
 pandas
 scipy
 typing-extensions
+cairosvg
