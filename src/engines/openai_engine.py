@@ -78,9 +78,10 @@ class OpenAIEngine:
         
         # Make the API call using the provided client
         try:
+            print("Modle name", self.model_name)
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                temperature=self.temperature,
+                n=1,
                 messages=messages,
             )
         except Exception as e:
@@ -135,7 +136,8 @@ def main(model_name: str = "gpt-3.5-turbo", api_key: str=BASE_OPENAI_API_KEY, ba
     # Suppose we have a puzzles CSV with columns: 'PGN', 'Moves', 'Rating', ...
     puzzles_path = os.path.join(CURRENT_DIR, "./puzzles.csv")
     puzzles = pd.read_csv(puzzles_path, nrows=n_puzzles)  # e.g., read 10 puzzles
-
+    print("API KEY: ", api_key)
+    print("BASE URL: ", base_url)
     client = openai.OpenAI(
         api_key=api_key,
         base_url=base_url,
