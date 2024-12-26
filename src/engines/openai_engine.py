@@ -165,7 +165,7 @@ def evaluate_puzzle_from_pandas_row(puzzle: pd.Series, puzzle_idx: str, engine: 
     game = chess.pgn.read_game(io.StringIO(puzzle['PGN']))
     if game is None:
         raise ValueError(f'Failed to read game from PGN {puzzle["PGN"]}.')
-    board = game.end().board()
+    board = game.board()
     solution_moves = puzzle['Moves'].split(' ')
     puzzle_id = f"{puzzle['PuzzleId']}" # get the index and puzzle id 
 
