@@ -15,11 +15,14 @@ import struct
 import tqdm
 
 from searchless_chess.src import constants
+from searchless_chess.src.tokenizer import tokenize
 from datasets import Dataset, concatenate_datasets
 from typing import Any, SupportsIndex
 from typing_extensions import Self
 import zstandard as zstd
 
+
+FIXED_FEN = True 
 
 class BagFileReader(Sequence[bytes]):
   """Reader for single Bagz files."""
@@ -278,24 +281,11 @@ class BagDataSource:
   def __repr__(self) -> str:
     return f'BagDataSource(path={self._path!r}'
 
-def encode_message(element: str, fixed_fen: bool = True):
-  fen, move = constants.CODERS['behavioral_cloning'].decode(element)
-  if fixed_fen: 
-    fen = convert_fen_to_fixed_length(fen)
-  conversation = [
-    {
-      "content": f"Find the best UCI chess move for the following FEN position: {fen}",
-      "role": "user"
-    },
-    {
-      "content": f"{move}",
-      "role": "assistant"
-    },
-  ]
-  message = {
-    'messages': conversation
-  }
-  return message
+def encode_message(element, fixed_fen: bool = True):
+    fen, move = constants.CODERS['behavioral_cloning'].decode(element)
+    if fixed_fen:
+        fen = tokenize(fen)
+    return fen, move
 
 def generate_chunk(reader, start_idx, chunk_size):
     """
@@ -305,63 +295,14 @@ def generate_chunk(reader, start_idx, chunk_size):
     prompts = []
     responses = []
     for i in range(start_idx, end_idx):
-        fen, move = constants.CODERS['behavioral_cloning'].decode(reader[i])
-        prompts.append(f"Find the best UCI chess move for the following FEN position: {fen}")
+        fen, move = encode_message(reader[i], fixed_fen=FIXED_FEN)
+        prompts.append(f"{fen}")
         responses.append(move)
-
+  
     return Dataset.from_dict({
         'prompt': prompts,
         'response': responses,
     })
-
-def convert_fen_to_fixed_length(fen: str) -> str:
-    # Split the FEN string into components
-    parts = fen.split()
-
-    # Step 1: Convert board representation (64 characters)
-    board = parts[0]
-    fixed_board = ''
-    for char in board:
-        if char.isdigit():
-            fixed_board += '.' * int(char)  # Replace numbers with dots
-        elif char != '/':  # Ignore slashes separating ranks
-            fixed_board += char
-
-    # Ensure the board representation is exactly 64 characters
-    if len(fixed_board) != 64:
-        raise ValueError("Invalid FEN board representation")
-
-    # Step 2: Convert active player (1 character)
-    active_player = parts[1]  # 'w' or 'b'
-
-    # Step 3: Convert castling availability (4 characters)
-    castling = parts[2]
-    fixed_castling = castling if castling != '-' else ''
-    fixed_castling = fixed_castling.ljust(4, '.')  # Pad with '.' to make 4 characters
-
-    # Step 4: Convert en passant target (2 characters)
-    en_passant = parts[3]
-    fixed_en_passant = en_passant if en_passant != '-' else '-.'
-
-    # Step 5: Convert halfmove clock (2 characters)
-    halfmove_clock = parts[4]
-    fixed_halfmove_clock = halfmove_clock.rjust(2, '.')
-
-    # Step 6: Convert fullmove number (3 characters)
-    fullmove_number = parts[5]
-    fixed_fullmove_number = fullmove_number.rjust(3, '.')
-
-    # Combine all parts into the fixed-length FEN format
-    fixed_fen = (
-        fixed_board + ' ' +
-        active_player + ' ' +
-        fixed_castling + ' ' +
-        fixed_en_passant + ' ' +
-        fixed_halfmove_clock + ' ' +
-        fixed_fullmove_number
-    )
-
-    return fixed_fen
 
 if __name__ == '__main__':
   train_r = BagReader('../data/behavioral_cloning_data_train.bag')
@@ -379,7 +320,7 @@ if __name__ == '__main__':
   val_prompts = []
   val_responses = []
   for i in range(len(val_r)):
-    fen, move = constants.CODERS['behavioral_cloning'].decode(val_r[i])
+    fen, move = encode_message(val_r[i], fixed_fen=FIXED_FEN)
     val_prompts.append(f"You are an expert chess player. Find the best UCI chess move for the following FEN position: {fen}")
     val_responses.append(f"{move}")
   val_dataset = Dataset.from_dict({
