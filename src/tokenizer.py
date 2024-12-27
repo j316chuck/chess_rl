@@ -59,7 +59,7 @@ _SPACES_CHARACTERS = frozenset({'1', '2', '3', '4', '5', '6', '7', '8'})
 SEQUENCE_LENGTH = 77
 
 
-def tokenize(fen: str) -> jtp.Int32[jtp.Array, 'T']:
+def tokenize(fen: str) -> str:
   """Returns an array of tokens from a fen string.
 
   We compute a tokenized representation of the board, from the FEN string.
@@ -81,36 +81,37 @@ def tokenize(fen: str) -> jtp.Int32[jtp.Array, 'T']:
 
   for char in board:
     if char in _SPACES_CHARACTERS:
-      indices.extend(int(char) * [_CHARACTERS_INDEX['.']])
+      indices.extend(int(char) * ['.'])
     else:
-      indices.append(_CHARACTERS_INDEX[char])
+      indices.append(char)
 
   if castling == '-':
-    indices.extend(4 * [_CHARACTERS_INDEX['.']])
+    indices.extend(4 * ['.'])
   else:
     for char in castling:
-      indices.append(_CHARACTERS_INDEX[char])
+      indices.append(char)
     # Padding castling to have exactly 4 characters.
     if len(castling) < 4:
-      indices.extend((4 - len(castling)) * [_CHARACTERS_INDEX['.']])
+      indices.extend((4 - len(castling)) * ['.'])
 
   if en_passant == '-':
-    indices.extend(2 * [_CHARACTERS_INDEX['.']])
+    indices.extend(2 * ['.'])
   else:
     # En passant is a square like 'e3'.
     for char in en_passant:
-      indices.append(_CHARACTERS_INDEX[char])
+      indices.append(char)
 
   # Three digits for halfmoves (since last capture) is enough since the game
   # ends at 50.
   halfmoves_last += '.' * (3 - len(halfmoves_last))
-  indices.extend([_CHARACTERS_INDEX[x] for x in halfmoves_last])
+  indices.extend([x for x in halfmoves_last])
 
   # Three digits for full moves is enough (no game lasts longer than 999
   # moves).
   fullmoves += '.' * (3 - len(fullmoves))
-  indices.extend([_CHARACTERS_INDEX[x] for x in fullmoves])
+  indices.extend([x for x in fullmoves])
 
   assert len(indices) == SEQUENCE_LENGTH
+  return ''.join(indices)
+  # return np.asarray(indices, dtype=np.uint8)
 
-  return np.asarray(indices, dtype=np.uint8)
