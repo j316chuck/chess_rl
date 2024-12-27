@@ -50,6 +50,7 @@ if __name__ == "__main__":
         "meta-llama/Llama-3.2-3B-Instruct",
         "meta-llama/Llama-3.2-1B-Instruct",
         "meta-llama/Llama-3.3-70B-Instruct",
+        "meta-llama/Llama-3.1-70B-Instruct",
     ]
     local_save_dir = "./models"
     os.makedirs(local_save_dir, exist_ok=True)
@@ -74,9 +75,11 @@ if __name__ == "__main__":
         tokenizer.add_tokens(new_tokens)
         print("New tokenizer size:", len(tokenizer))
         # Resize the model's embedding layer to match the new tokenizer size
-        old_size = len(model.get_input_embeddings())
-        model.resize_token_embeddings(len(tokenizer))
-        print(f"Resized model's embedding layer from {old_size} to {len(model.get_input_embeddings())}")
+        old_size = model.get_input_embeddings().weight.shape[0]
+        model.resize_token_embeddings(len(tokenizer), mean_resizing=True)
+        new_size = model.get_input_embeddings().weight.shape[0]
+        print(f"Resized model's embedding layer from {old_size} to {new_size}")
+
         # Save the updated model and tokenizer locally
         model.save_pretrained(local_save_dir)
         tokenizer.save_pretrained(local_save_dir)
@@ -85,12 +88,13 @@ if __name__ == "__main__":
         
         # Upload to the HuggingFace Hub
         api = HfApi()
+        trailing_base_model_name = base_model_name.split("/")[-1]
+        updated_model_name = f"j316chuck/{trailing_base_model_name}-Chess"
         api.create_repo(repo_id=updated_model_name, repo_type="model", private=True, exist_ok=True)
         tokenizer.push_to_hub(updated_model_name)
         print("Pushed tokenizer to HuggingFace Hub")
         model.push_to_hub(updated_model_name)
         print("Pushed model to HuggingFace Hub")
         print(f"Model successfully uploaded to: https://huggingface.co/{updated_model_name}")
-
 
     upload_s3_path_awscli(local_save_dir, S3_UPLOAD_PATH)
