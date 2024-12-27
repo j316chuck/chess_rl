@@ -74,6 +74,7 @@ class OpenAIEngine:
         base_url: str,
         model_name: str = "model",
         temperature: float = 0.0,
+        prompt: list[str] = None,
     ):
         """
         Initialize the OpenAIEngine with a custom OpenAI client.
@@ -82,6 +83,7 @@ class OpenAIEngine:
         :param base_url: The base URL to use.
         :param model_name: The name of the model to use.
         :param temperature: Sampling temperature.
+        :param prompt: Prompt to use for the engine.
         """
         self.client = openai.OpenAI(
             api_key=api_key,
@@ -89,7 +91,8 @@ class OpenAIEngine:
         )
         self.model_name = model_name
         self.temperature = temperature
-    
+        self.prompt = prompt
+        
     def _fallback_move(self, board: chess.Board) -> chess.Move:
         """
         Return the first legal move as a fallback.
@@ -117,10 +120,12 @@ class OpenAIEngine:
         board_state = board.fen()
         
         # Construct the prompt
-        prompt_content = (
-            f"You are an expert chess player. Find the best UCI chess move for the following FEN position: {board_state}"
-        )
-        
+        if self.prompt:
+            prompt_content = self.prompt.format(board_state=board_state)
+        else:
+            prompt_content = (
+                f"Find the best UCI chess move for the following FEN position: {board_state}"
+            )
         messages = [
             {
                 "role": "user",
@@ -143,6 +148,7 @@ class OpenAIEngine:
         # Extract and clean the response
         raw_reply = response.choices[0].message.content.strip()
         print("Predicted raw reply: ", raw_reply)
+        
         # Attempt to parse the move
         try:
             move = chess.Move.from_uci(raw_reply)
@@ -165,11 +171,10 @@ def evaluate_puzzle_from_pandas_row(puzzle: pd.Series, puzzle_idx: str, engine: 
     game = chess.pgn.read_game(io.StringIO(puzzle['PGN']))
     if game is None:
         raise ValueError(f'Failed to read game from PGN {puzzle["PGN"]}.')
-    board = game.board()
+    board = game.end().board()
     solution_moves = puzzle['Moves'].split(' ')
     puzzle_id = f"{puzzle['PuzzleId']}" # get the index and puzzle id 
 
-    solution_board = board.copy()
     # Reset to original board for model moves
     model_moves = []
     is_correct = True
@@ -186,10 +191,12 @@ def evaluate_puzzle_from_pandas_row(puzzle: pd.Series, puzzle_idx: str, engine: 
                 model_moves.append(predicted_uci)
                 is_correct = False
                 break
+        
         # Always push the correct solution move to advance the board state
         board.push(chess.Move.from_uci(move_uci))
         model_moves.append(move_uci)
     
+    # save the visualization if save_folder is provided
     if save_folder:
         line1 = " ".join(str(x) for x in solution_moves)
         line2 = " ".join(str(x) for x in model_moves)
@@ -199,7 +206,7 @@ def evaluate_puzzle_from_pandas_row(puzzle: pd.Series, puzzle_idx: str, engine: 
         visualize_chess_image(fen=solution_board.fen(), line1=line1, line2=line2, output_path=output_path, puzzle_id=puzzle_id, correct=is_correct)
     return is_correct
 
-def main(model_name: str = "gpt-3.5-turbo", api_key: str=BASE_OPENAI_API_KEY, base_url: str = BASE_OPENAI_URL, n_puzzles: int = 100, update_metadata: bool = False, temperature: float = 0.0, save_folder: str = None, remote_save_folder: str = None):
+def main(model_name: str = "gpt-3.5-turbo", api_key: str=BASE_OPENAI_API_KEY, base_url: str = BASE_OPENAI_URL, temperature: float = 0.0, prompt: str = None, n_puzzles: int = 100, update_metadata: bool = False, save_folder: str = None, remote_save_folder: str = None):
     # Suppose we have a puzzles CSV with columns: 'PGN', 'Moves', 'Rating', ...
     puzzles = pd.read_csv(PUZZLES_PATH, nrows=n_puzzles)  # e.g., read 10 puzzles
 
@@ -209,6 +216,7 @@ def main(model_name: str = "gpt-3.5-turbo", api_key: str=BASE_OPENAI_API_KEY, ba
         base_url=base_url,
         model_name=model_name,  # or "gpt-4", etc.
         temperature=temperature,
+        prompt=prompt,
     )
 
     # Evaluate puzzles iteratively
@@ -223,6 +231,7 @@ def main(model_name: str = "gpt-3.5-turbo", api_key: str=BASE_OPENAI_API_KEY, ba
             print(f"Puzzle {puzzle_idx} raised an exception: {e}")
             results.append((puzzle_idx, False, puzzles.loc[puzzle_idx, 'Rating']))
 
+    # save the results to s3 if remote_save_folder is provided
     if save_folder and remote_save_folder: 
         upload_s3_path_awscli(save_folder, remote_save_folder)
 
@@ -337,6 +346,8 @@ if __name__ == '__main__':
                         help='Path to the folder to save results')
     parser.add_argument('--remote_save_folder', type=str, default=None,
                         help='Path to the remote folder to upload results to')
+    parser.add_argument('--prompt', type=str, default=None,
+                        help='Prompt to use for the engine')
     
     args = parser.parse_args()
     # download s3 path to local puzzles.csv if it's not already there
@@ -352,4 +363,5 @@ if __name__ == '__main__':
         temperature=args.temperature,
         save_folder=args.save_folder,
         remote_save_folder=args.remote_save_folder,
+        prompt=args.prompt,
     )
