@@ -278,8 +278,10 @@ class BagDataSource:
   def __repr__(self) -> str:
     return f'BagDataSource(path={self._path!r}'
 
-def encode_message(element: str):
+def encode_message(element: str, fixed_fen: bool = True):
   fen, move = constants.CODERS['behavioral_cloning'].decode(element)
+  if fixed_fen: 
+    fen = convert_fen_to_fixed_length(fen)
   conversation = [
     {
       "content": f"Find the best UCI chess move for the following FEN position: {fen}",
@@ -312,15 +314,64 @@ def generate_chunk(reader, start_idx, chunk_size):
         'response': responses,
     })
 
+def convert_fen_to_fixed_length(fen: str) -> str:
+    # Split the FEN string into components
+    parts = fen.split()
+
+    # Step 1: Convert board representation (64 characters)
+    board = parts[0]
+    fixed_board = ''
+    for char in board:
+        if char.isdigit():
+            fixed_board += '.' * int(char)  # Replace numbers with dots
+        elif char != '/':  # Ignore slashes separating ranks
+            fixed_board += char
+
+    # Ensure the board representation is exactly 64 characters
+    if len(fixed_board) != 64:
+        raise ValueError("Invalid FEN board representation")
+
+    # Step 2: Convert active player (1 character)
+    active_player = parts[1]  # 'w' or 'b'
+
+    # Step 3: Convert castling availability (4 characters)
+    castling = parts[2]
+    fixed_castling = castling if castling != '-' else ''
+    fixed_castling = fixed_castling.ljust(4, '.')  # Pad with '.' to make 4 characters
+
+    # Step 4: Convert en passant target (2 characters)
+    en_passant = parts[3]
+    fixed_en_passant = en_passant if en_passant != '-' else '-.'
+
+    # Step 5: Convert halfmove clock (2 characters)
+    halfmove_clock = parts[4]
+    fixed_halfmove_clock = halfmove_clock.rjust(2, '.')
+
+    # Step 6: Convert fullmove number (3 characters)
+    fullmove_number = parts[5]
+    fixed_fullmove_number = fullmove_number.rjust(3, '.')
+
+    # Combine all parts into the fixed-length FEN format
+    fixed_fen = (
+        fixed_board + ' ' +
+        active_player + ' ' +
+        fixed_castling + ' ' +
+        fixed_en_passant + ' ' +
+        fixed_halfmove_clock + ' ' +
+        fixed_fullmove_number
+    )
+
+    return fixed_fen
+
 if __name__ == '__main__':
   train_r = BagReader('../data/behavioral_cloning_data_train.bag')
   val_r = BagReader('../data/test/behavioral_cloning_data_test.bag')
   print("Number of positions", len(train_r))
   dataset_sizes = {
-    'small': 500_000,
-    'medium': 5_000_000,
-    'large': 50_000_000,
-    'all': -1,  # 500_000_000
+    'small_fixed': 500_000,
+    'medium_fixed': 5_000_000,
+    'large_fixed': 50_000_000,
+    'all_fixed': -1,  # 500_000_000
   }
   chunk_size = 50_000
   repo_id = 'j316chuck/chess_rl'
