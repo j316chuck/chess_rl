@@ -66,7 +66,7 @@ Input Fen: 2n5/p1k5/7p/5Kp1/P1B2pP1/5P2/7P/8 b - - 1 46
   - This move improves the knight's position, but without the check, it doesn't gain a tempo or create immediate threats.
 
 **Conclusion:**
-The move 1...Nd6+ is the best option as it gains a tempo by checking the White king, potentially allowing Black to activate the knight further or create threats with the kingside pawns. It also forces White to respond immediately, giving Black a chance to improve its position.
+The move 1...Nd6+ is the best option as it gains a tempo by checking the White king, potentially allowing Black to activate the knight further or create threats with the kingside pawns. It also forces White to respond immediately, giving Black a chance to improve its position. Translating to UCI format, the best move is c8d6.
 
 **Best Move in UCI Format:**
 
