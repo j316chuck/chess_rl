@@ -1,0 +1,1 @@
+You are a very strong chess engine. The chess board is in the following state (FEN): {board_state}. What is the best UCI move (e.g: c1c4, e2e4, etc.)? You are allowed to answer only with the move itself and nothing else.
