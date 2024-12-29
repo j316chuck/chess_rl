@@ -382,7 +382,10 @@ if __name__ == '__main__':
     # download s3 path to local puzzles.csv if it's not already there
     if not os.path.exists(PUZZLES_PATH):
         download_s3_path_awscli(s3_uri=args.puzzles_path, out_path=PUZZLES_PATH)
-    
+    if not args.prompt and args.prompt_path:
+        with open(args.prompt_path, "r") as f:
+            args.prompt = f.read()
+
     main(
         model_name=args.model_name,
         api_key=args.api_key, 

@@ -112,6 +112,15 @@ class LLMChessEngine:
         )
         # Make the API call using the provided client
         try:
+            raw_replies = []
+            for _ in range(self.n_samples):
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    n=1,
+                    messages=messages,
+                    temperature=self.temperature,
+                )
+                raw_replies.append(response.choices[0].message.content.strip())
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 n=self.n_samples,
@@ -124,8 +133,8 @@ class LLMChessEngine:
         
         # Extract and clean the response
         llm_moves = []
-        for choice in response.choices:
-            llm_move.raw_reply = choice.message.content.strip()
+        for raw_reply in raw_replies:
+            llm_move.raw_reply = raw_reply
 
             # print("Predicted raw reply: ", llm_move.raw_reply)
             llm_move.move = self.extract_uci_move(llm_move.raw_reply)
@@ -172,20 +181,24 @@ class ChessInferenceEngine:
         """
         Sample moves from the model for each of the n_points.
         """
-        correct_move_responses = []
-        incorrect_move_responses = []
+        correct_moves = []
+        incorrect_moves = []
         prompt_responses = []
         answer_responses = []
         os.makedirs(save_folder, exist_ok=True)
 
         for ii, (fen_position, correct_move) in enumerate(zip(fen_positions, golden_moves)):
+            print("--------------------------------")
             print(f"Sampling move {ii} of {len(fen_positions)}.")
-            print(f"Seen {len(correct_move_responses)} correct moves. Seen {len(incorrect_move_responses)} incorrect moves.")
-            print(f"{len(correct_move_responses) / (len(incorrect_move_responses) + len(correct_move_responses)) * 100:.2f}% correct moves.")
             board = chess.Board(fen_position)
             llm_moves = self.engine.play(board, correct_move)
             incorrect_move_responses = [llm_move.raw_reply for llm_move in llm_moves if not llm_move.is_correct]
             correct_move_responses = [llm_move.raw_reply for llm_move in llm_moves if llm_move.is_correct]
+            percentage_correct = len(correct_move_responses) / (len(incorrect_move_responses) + len(correct_move_responses)) * 100
+
+            print(f"Percentage correct: {percentage_correct:.2f}%")
+            with open(os.path.join(save_folder, f"position_{ii}_percentage_correct_{percentage_correct:.2f}.txt"), "w") as f:
+                f.write(f"Percentage correct: {percentage_correct:.2f}%")
             with open(os.path.join(save_folder, f"position_{ii}_incorrect.txt"), "w") as f:
                 for i, move in enumerate(incorrect_move_responses):
                     f.write(f"Raw reply {i}:\n{move}\n")
@@ -198,38 +211,42 @@ class ChessInferenceEngine:
                 pairs = list(itertools.product(incorrect_move_responses, correct_move_responses))
                 num_data_points = min(n_data_points_per_position, len(pairs))
                 data_points = random.sample(pairs, k=num_data_points)
-                incorrect_move_responses.extend([pair[0] for pair in data_points[:num_data_points]])
-                correct_move_responses.extend([pair[1] for pair in data_points[:num_data_points]])
+                incorrect_moves.extend([pair[0] for pair in data_points[:num_data_points]])
+                correct_moves.extend([pair[1] for pair in data_points[:num_data_points]])
                 prompt_responses.extend([fen_position for _ in range(num_data_points)])
                 answer_responses.extend([correct_move for _ in range(num_data_points)])
             else:
                 num_data_points = min(n_data_points_per_position, len(correct_move_responses))
-                correct_move_responses.extend(correct_move_responses[:num_data_points])
+                correct_moves.extend(correct_move_responses[:num_data_points])
                 prompt_responses.extend([fen_position for _ in range(num_data_points)])
                 answer_responses.extend([correct_move for _ in range(num_data_points)])
+                incorrect_moves.extend([incorrect_move_responses[i] for i in range(n_data_points_per_position - num_data_points)])
+                # print("Length of prompt responses: ", len(prompt_responses))
+                # print("Length of answer responses: ", len(answer_responses))
+            print(f"Seen {len(correct_moves)} correct moves. Seen {len(incorrect_moves)} incorrect moves.")
+            print(f"{len(correct_moves) / (len(incorrect_moves) + len(correct_moves)) * 100:.2f}% correct moves.")
             if max_samples and ii >= max_samples:
                 break
 
-        assert len(prompt_responses) == len(answer_responses)
-        assert len(correct_move_responses) == len(prompt_responses)
+        assert len(prompt_responses) == len(answer_responses), f"Length of prompt responses: {len(prompt_responses)} is not equal to length of answer responses: {len(answer_responses)}"
+        assert len(correct_moves) == len(prompt_responses), f"Length of correct move responses: {len(correct_moves)} is not equal to length of prompt responses: {len(prompt_responses)}"
         if dpo:
-            assert len(incorrect_move_responses) == len(correct_move_responses)
+            assert len(incorrect_moves) == len(correct_moves), f"Length of incorrect move responses: {len(incorrect_moves)} is not equal to length of correct move responses: {len(correct_moves)}"
         print("Total number of data points sampled: ", len(answer_responses))
-
         # save the data to the save_folder
         if dpo:
             ds = Dataset.from_dict({
                 'prompt': prompt_responses,
                 'answer': answer_responses,
-                'chosen': correct_move_responses,
-                'rejected': incorrect_move_responses,
+                'chosen': correct_moves,
+                'rejected': incorrect_moves,
             }).train_test_split(test_size=0.1)
             ds['train'].to_json(os.path.join(save_folder, "train.jsonl"))
             ds['test'].to_json(os.path.join(save_folder, "val.jsonl"))
         else:
             ds = Dataset.from_dict({
                 'prompt': prompt_responses,
-                'response': correct_move_responses,
+                'response': correct_moves,
                 'answer': answer_responses,
             }).train_test_split(test_size=0.1)
             ds['train'].to_json(os.path.join(save_folder, "train.jsonl"))
@@ -316,7 +333,7 @@ if __name__ == '__main__':
     parser.add_argument('--api_key', type=str, required=True)
     parser.add_argument('--base_url', type=str, required=True)
     parser.add_argument('--temperature', type=float, required=True)
-    parser.add_argument('--prompt', type=str, required=True)
+    parser.add_argument('--prompt', type=str, required=False, default=None)
     parser.add_argument('--n_samples_per_position', type=int, required=True)
     parser.add_argument('--base_dataset_path', type=str, required=True)
     parser.add_argument('--n_data_points_per_position', type=int, required=True)
@@ -324,6 +341,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_folder', type=str, required=True)
     parser.add_argument('--remote_save_folder', type=str, required=False)
     parser.add_argument('--max_positions', type=int, required=False)
+    parser.add_argument('--prompt_path', type=str, required=False, default=None)
     args = parser.parse_args()
     print(args)
 
@@ -338,6 +356,10 @@ if __name__ == '__main__':
         dataset_path = args.base_dataset_path
     dataset = Dataset.from_json(dataset_path)
     print(dataset)
+    if not args.prompt:
+        assert args.prompt_path, "Prompt path is required if prompt is not provided"
+        with open(args.prompt_path, "r") as f:
+            args.prompt = f.read()
 
     engine = ChessInferenceEngine(
         model_name=args.model_name,
