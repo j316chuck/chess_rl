@@ -234,9 +234,12 @@ class ChessInferenceEngine:
         if dpo:
             ds = Dataset.from_dict({
                 'prompt': prompt_responses,
+                'prompt_len': [len(x) for x in prompt_responses],   
                 'answer': answer_responses,
                 'chosen': correct_moves,
+                'chosen_len': [len(x) for x in correct_moves],
                 'rejected': incorrect_moves,
+                'rejected_len': [len(x) for x in incorrect_moves],
             }).train_test_split(test_size=0.1)
             ds['train'].to_json(os.path.join(save_folder, "train.jsonl"))
             ds['test'].to_json(os.path.join(save_folder, "val.jsonl"))
