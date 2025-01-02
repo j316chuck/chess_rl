@@ -14,11 +14,22 @@ import json
 from datasets import Dataset
 from chess import Board
 from cairosvg import svg2png
+from transformers import AutoTokenizer
+from streaming.base import MDSWriter
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 BASE_OPENAI_URL = "https://api.openai.com/v1"
-
+DPO_DATASET_COLUMNS = {
+    'prompt': 'str', 
+    'answer': 'str', 
+    'chosen': 'str', 
+    'chosen_len': 'int32', 
+    'rejected': 'str', 
+    'rejected_len': 'int32', 
+    'chosen_reward': 'float32', 
+    'rejected_reward': 'float32'
+}
 
 class LLMChessMove:
     def __init__(self, move: chess.Move, is_legal: bool, raw_reply: str, is_correct: bool):
@@ -168,7 +179,7 @@ class ChessInferenceEngine:
             n_samples=n_samples_per_position,
         )
 
-    def sample_moves(self, fen_positions: list[str], golden_moves: list[str], n_data_points_per_position: int, dpo: bool, save_folder: str, remote_save_folder: str, max_samples: int=None) -> list[str]:
+    def sample_moves(self, fen_positions: list[str], golden_moves: list[str], n_data_points_per_position: int, dpo: bool, save_folder: str, remote_save_folder: str, max_samples: int=None, tokenizer: AutoTokenizer=None) -> list[str]:
         """
         Sample moves from the model for each of the n_points.
         """
@@ -232,15 +243,34 @@ class ChessInferenceEngine:
         with open(os.path.join(save_folder, "percentage_correct_dict.json"), "w", encoding="utf-8") as f:
             json.dump(percentage_correct_dict, f)
         if dpo:
+            out_path = os.path.join(save_folder, "dpo_streaming_dataset")
+            # Write to MDS
+            with MDSWriter(out=out_path,
+                        columns=DPO_DATASET_COLUMNS) as out:
+                for i in range(len(prompt_responses)):
+                    out.write({
+                        'prompt': prompt_responses[i],
+                        'prompt_len': len(tokenizer.encode(prompt_responses[i])),
+                        'answer': answer_responses[i],
+                        'chosen': correct_moves[i],
+                        'chosen_len': len(tokenizer.encode(correct_moves[i])), 
+                        'rejected': incorrect_moves[i],
+                        'rejected_len': len(tokenizer.encode(incorrect_moves[i])),
+                        'chosen_reward': 1.0,
+                        'rejected_reward': 0.0,
+                    })
+            # write to jsonl
             ds = Dataset.from_dict({
                 'prompt': prompt_responses,
-                'prompt_len': [len(x) for x in prompt_responses],   
+                'prompt_len': [len(tokenizer.encode(x)) for x in prompt_responses],   
                 'answer': answer_responses,
                 'chosen': correct_moves,
-                'chosen_len': [len(x) for x in correct_moves],
+                'chosen_len': [len(tokenizer.encode(x)) for x in correct_moves],
                 'rejected': incorrect_moves,
-                'rejected_len': [len(x) for x in incorrect_moves],
-            }).train_test_split(test_size=0.1)
+                'rejected_len': [len(tokenizer.encode(x)) for x in incorrect_moves],
+                'chosen_reward': [1.0 for _ in range(len(correct_moves))],
+                'rejected_reward': [0.0 for _ in range(len(incorrect_moves))],
+            }).train_test_split(test_size=0.01)
             ds['train'].to_json(os.path.join(save_folder, "train.jsonl"))
             ds['test'].to_json(os.path.join(save_folder, "val.jsonl"))
         else:
@@ -248,7 +278,7 @@ class ChessInferenceEngine:
                 'prompt': prompt_responses,
                 'response': correct_moves,
                 'answer': answer_responses,
-            }).train_test_split(test_size=0.1)
+            }).train_test_split(test_size=0.01)
             ds['train'].to_json(os.path.join(save_folder, "train.jsonl"))
             ds['test'].to_json(os.path.join(save_folder, "val.jsonl"))
         
@@ -343,6 +373,7 @@ if __name__ == '__main__':
     parser.add_argument('--remote_save_folder', type=str, required=False)
     parser.add_argument('--max_positions', type=int, required=False)
     parser.add_argument('--prompt_path', type=str, required=False, default=None)
+    parser.add_argument('--tokenizer', type=str, required=False, default=None)
     args = parser.parse_args()
     print(args)
 
@@ -370,6 +401,7 @@ if __name__ == '__main__':
         prompt=args.prompt,
         n_samples_per_position=args.n_samples_per_position,
     )
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer) if args.tokenizer else None
     engine.sample_moves(
         fen_positions=dataset["prompt"],
         golden_moves=dataset["response"],
@@ -378,4 +410,5 @@ if __name__ == '__main__':
         save_folder=args.save_folder,
         remote_save_folder=args.remote_save_folder,
         max_samples=args.max_positions, 
+        tokenizer=tokenizer,
     )
