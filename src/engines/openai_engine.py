@@ -375,7 +375,7 @@ if __name__ == '__main__':
                         help='Path to the remote folder to upload results to')
     parser.add_argument('--prompt', type=str, default=None,
                         help='Prompt to use for the engine')
-    parser.add_argument('--prompt-path', type=str, default=None,
+    parser.add_argument('--prompt_path', type=str, default=None,
                         help='Path to the prompt file')
     
     args = parser.parse_args()

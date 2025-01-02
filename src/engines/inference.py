@@ -179,7 +179,7 @@ class ChessInferenceEngine:
             n_samples=n_samples_per_position,
         )
 
-    def sample_moves(self, fen_positions: list[str], golden_moves: list[str], n_data_points_per_position: int, dpo: bool, save_folder: str, remote_save_folder: str, max_samples: int=None, tokenizer: AutoTokenizer=None) -> list[str]:
+    def sample_moves(self, fen_positions: list[str], golden_moves: list[str], n_data_points_per_position: int, dpo: bool, save_folder: str, remote_save_folder: str, max_samples: int=None, tokenizer: AutoTokenizer=None, update_metadata: bool=False) -> list[str]:
         """
         Sample moves from the model for each of the n_points.
         """
@@ -243,18 +243,18 @@ class ChessInferenceEngine:
         with open(os.path.join(save_folder, "percentage_correct_dict.json"), "w", encoding="utf-8") as f:
             json.dump(percentage_correct_dict, f)
         if dpo:
-            out_path = os.path.join(save_folder, "dpo_streaming_dataset")
+            out_path = os.path.join(save_folder, "dpo_streaming_dataset", "train")
             # Write to MDS
             with MDSWriter(out=out_path,
                         columns=DPO_DATASET_COLUMNS) as out:
                 for i in range(len(prompt_responses)):
                     out.write({
-                        'prompt': prompt_responses[i],
+                        'prompt': prompt_responses[i].encode(),
                         'prompt_len': len(tokenizer.encode(prompt_responses[i])),
-                        'answer': answer_responses[i],
-                        'chosen': correct_moves[i],
+                        'answer': answer_responses[i].encode(),
+                        'chosen': correct_moves[i].encode(),
                         'chosen_len': len(tokenizer.encode(correct_moves[i])), 
-                        'rejected': incorrect_moves[i],
+                        'rejected': incorrect_moves[i].encode(),
                         'rejected_len': len(tokenizer.encode(incorrect_moves[i])),
                         'chosen_reward': 1.0,
                         'rejected_reward': 0.0,
@@ -285,6 +285,16 @@ class ChessInferenceEngine:
         if remote_save_folder:
             upload_s3_path_awscli(s3_uri=remote_save_folder, upload_path=save_folder)
             print("Uploaded data to ", remote_save_folder)
+
+        if update_metadata:
+            metadata = {
+                "mosaicml/data/total_correct": total_correct,
+                "mosaicml/data/total_incorrect": total_incorrect,
+                "mosaicml/data/percentage_correct": total_correct / (total_incorrect + total_correct) * 100,
+                "mosaicml/data/num_data": len(prompt_responses), 
+            }
+            run_name = os.environ.get("RUN_NAME", "default_run_name")
+            mcli.update_run_metadata(run_name, metadata)
         return ds
 
 def upload_s3_path_awscli(
@@ -374,6 +384,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_positions', type=int, required=False)
     parser.add_argument('--prompt_path', type=str, required=False, default=None)
     parser.add_argument('--tokenizer', type=str, required=False, default=None)
+    parser.add_argument('--update_metadata', action='store_true', help='Update metadata in the dataset')
     args = parser.parse_args()
     print(args)
 
@@ -411,4 +422,5 @@ if __name__ == '__main__':
         remote_save_folder=args.remote_save_folder,
         max_samples=args.max_positions, 
         tokenizer=tokenizer,
+        update_metadata=args.update_metadata,
     )
